@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Layout">
+<meta name="theme-color" content="#2f6fde">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
 <title>Layout Planner</title>
 <style>
   :root {
@@ -49,7 +56,8 @@
   #left { border-right: 1px solid var(--line); }
   #right { border-left: 1px solid var(--line); }
   #stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
-  #canvas { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #canvas { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none;
+            -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
   #statusbar { position: absolute; left: 10px; bottom: 8px; right: 10px; font-size: 12px; color: var(--muted); pointer-events: none;
                display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
@@ -148,6 +156,17 @@
   .s-dimt { fill: var(--accent); font-weight: 600; }
   .s-dim, .s-dimbg, .s-dimt, .s-roomlbl, .s-zone, .s-arc, .s-leaf { pointer-events: none; }
 
+  .banner { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; background: var(--accent); color: var(--accent-ink); }
+  .banner span { flex: 1; min-width: 200px; }
+  .banner[hidden] { display: none; }
+
+  @media (max-width: 1280px) and (min-width: 961px) {
+    main { grid-template-columns: 240px minmax(0, 1fr) 270px; }
+  }
+  @media (pointer: coarse) {
+    button, .btn { padding: 8px 12px; }
+    button.sm { padding: 5px 10px; }
+  }
   @media (max-width: 960px) {
     html, body { height: auto; }
     main { grid-template-columns: 1fr; }
@@ -172,9 +191,11 @@
   </label>
   <button data-a="gallery">Compare variations</button>
   <button data-a="exportImage" title="Save the current layout as a PNG with dimensions">Save image</button>
+  <button data-a="share" title="Share the current room (with its variations) as a link">Share room</button>
   <button data-a="export" title="Download all rooms and variations as JSON">Export data</button>
   <label class="btn" title="Load a previously exported JSON file">Import data<input type="file" id="importFile" accept="application/json,.json" hidden></label>
 </header>
+<div id="banner" class="banner" hidden></div>
 <main>
   <aside id="left"></aside>
   <section id="stage">
@@ -977,7 +998,7 @@ function renderRight(room, a) {
           <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>Z</kbd></td><td>Undo (<kbd>Shift</kbd> to redo)</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>Deselect / close compare view</td></tr>
         </table>
-        <p class="hint" style="margin-top:8px">Data is stored in this browser (localStorage). Use Export for a backup file.</p>
+        <p class="hint" style="margin-top:8px">Data is stored in this browser only. On iPad, add this page to the Home Screen so Safari keeps it; use Export for a backup file. Import and shared links add rooms (a room with the same ID is replaced); Undo reverts.</p>
       </details>
     </section>`;
 }
@@ -1111,6 +1132,49 @@ function copyRoom(room) {
   c.baseVarId = remap[c.baseVarId] || null;
   return c;
 }
+function mergeRooms(rooms) { // imported/shared rooms: replace same-id rooms, append the rest
+  let added = 0, replaced = 0;
+  const pristine = state.rooms.length === 1 && !state.rooms[0].items.length && !state.rooms[0].variations.length;
+  if (pristine) state.rooms = [];
+  rooms.forEach(r => {
+    const i = state.rooms.findIndex(x => x.id === r.id);
+    if (i >= 0) { state.rooms[i] = r; replaced++; } else { state.rooms.push(r); added++; }
+  });
+  state.activeId = rooms[0].id;
+  return [added && `added ${added} room${added === 1 ? '' : 's'}`, replaced && `updated ${replaced}`].filter(Boolean).join(', ');
+}
+const b64url = bytes => { let s = ''; bytes.forEach(b => { s += String.fromCharCode(b); }); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+const unb64url = str => Uint8Array.from(atob(str.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+async function pipeBytes(bytes, stream) { return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer()); }
+async function shareRoom() {
+  const room = cur();
+  const json = new TextEncoder().encode(JSON.stringify({ rooms: [room], activeId: room.id }));
+  let hash;
+  if (typeof CompressionStream === 'function') hash = 'z=' + b64url(await pipeBytes(json, new CompressionStream('deflate-raw')));
+  else hash = 'j=' + b64url(json);
+  const url = location.href.split('#')[0] + '#' + hash;
+  if (navigator.share) {
+    try { await navigator.share({ title: `Layout: ${room.name}`, url }); return; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(url); toast('Share link copied to the clipboard.'); }
+  catch { prompt('Copy this share link:', url); }
+}
+async function readShareHash() {
+  const m = location.hash.match(/^#([zj])=([A-Za-z0-9_-]+)$/);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  try {
+    let bytes = unb64url(m[2]);
+    if (m[1] === 'z') bytes = await pipeBytes(bytes, new DecompressionStream('deflate-raw'));
+    const data = normalize(JSON.parse(new TextDecoder().decode(bytes)));
+    const names = data.rooms.map(r => r.name).join(', ');
+    const b = $('#banner');
+    b.innerHTML = `<span>Shared layout received: <b>${esc(names)}</b></span><button data-a="acceptShare">Add to my rooms</button><button data-a="dismissShare">Dismiss</button>`;
+    b.hidden = false;
+    b._data = data;
+  } catch (err) { toast('Could not open the shared link: ' + err.message); }
+}
 function exportJSON() {
   download(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }), `layout-planner-${new Date().toISOString().slice(0, 10)}.json`);
 }
@@ -1241,6 +1305,14 @@ document.addEventListener('click', e => {
     case 'gallery': ui.gallery = !ui.gallery; render(); break;
     case 'closeGallery': ui.gallery = false; render(); break;
     case 'export': exportJSON(); break;
+    case 'share': shareRoom(); break;
+    case 'acceptShare': {
+      const b = $('#banner'), data = b._data;
+      b.hidden = true; b._data = null;
+      if (data) { sel = null; const msg = mutate(() => mergeRooms(data.rooms)); toast(`Shared layout ${msg}. Undo reverts.`); }
+      break;
+    }
+    case 'dismissShare': $('#banner').hidden = true; $('#banner')._data = null; break;
   }
 });
 document.addEventListener('change', e => {
@@ -1252,8 +1324,9 @@ document.addEventListener('change', e => {
     if (!file) return;
     file.text().then(txt => {
       const data = normalize(JSON.parse(txt));
-      mutate(() => { state = data; });
-      sel = null; toast(`Imported ${data.rooms.length} room${data.rooms.length === 1 ? '' : 's'}. Undo restores the previous data.`);
+      sel = null;
+      const msg = mutate(() => mergeRooms(data.rooms));
+      toast(`Import ${msg}. Undo restores the previous data.`);
     }).catch(err => toast('Import failed: ' + err.message));
     return;
   }
@@ -1424,6 +1497,9 @@ document.addEventListener('dragend', () => {
 
 new ResizeObserver(() => render()).observe($('#stage'));
 render();
+readShareHash();
+window.addEventListener('hashchange', readShareHash);
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 </script>
 </body>
 </html>
