@@ -1,0 +1,1429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layout Planner</title>
+<style>
+  :root {
+    --bg: #f3f2ee; --panel: #ffffff; --ink: #1d2330; --muted: #6b7280; --line: #e3e1da;
+    --accent: #2f6fde; --accent-ink: #ffffff; --danger: #c93c3c; --warn: #d98a1c;
+    --floor: #fbfaf6; --wall: #3b3f47; --grid: #ebe8df; --grid5: #d6d2c6; --window: #bcd8f2;
+    --input: #fafaf8; --hover: #f1f0ec;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15171c; --panel: #1e2128; --ink: #e7e9ee; --muted: #9aa1ad; --line: #2e323b;
+      --accent: #6b9cff; --accent-ink: #0d1220; --danger: #ef6b6b; --warn: #f0a540;
+      --floor: #262a32; --wall: #8a909c; --grid: #2d313a; --grid5: #3b404a; --window: #5a7fa6;
+      --input: #181b21; --hover: #272b33;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink);
+         display: flex; flex-direction: column; }
+  button, select, input { font: inherit; color: inherit; }
+  button, .btn { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; white-space: nowrap; }
+  button:hover, .btn:hover { background: var(--hover); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.primary:hover { filter: brightness(1.08); }
+  button.danger { color: var(--danger); }
+  button.confirming { background: var(--danger); border-color: var(--danger); color: #fff; }
+  button.sm { padding: 2px 8px; font-size: 12px; }
+  input[type=text], select { background: var(--input); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; width: 100%; min-width: 0; }
+  input[type=text]:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input[type=color] { width: 100%; height: 30px; padding: 0 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--input); }
+
+  .topbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .brand { font-weight: 700; margin-right: 8px; }
+  .topbar select { width: auto; max-width: 220px; }
+  .topbar .spacer { flex: 1; }
+  .topbar label.inline { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+
+  main { flex: 1; display: grid; grid-template-columns: 290px minmax(0, 1fr) 320px; min-height: 0; }
+  aside { overflow: auto; background: var(--panel); min-height: 0; }
+  #left { border-right: 1px solid var(--line); }
+  #right { border-left: 1px solid var(--line); }
+  #stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+  #canvas { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #statusbar { position: absolute; left: 10px; bottom: 8px; right: 10px; font-size: 12px; color: var(--muted); pointer-events: none;
+               display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+  .panel { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; }
+  .field { display: block; margin-bottom: 8px; }
+  .field > span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .btnrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .hint { font-size: 12px; color: var(--muted); margin: 2px 0 8px; }
+  .check { display: flex; gap: 6px; align-items: center; margin: 4px 0 8px; font-size: 13px; }
+
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  ul.list li { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
+  ul.list li:hover { background: var(--hover); }
+  ul.list li.sel { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,.2); }
+  .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .flag-bad { color: var(--danger); font-weight: 700; }
+  .flag-warn { color: var(--warn); font-weight: 700; }
+  .empty { color: var(--muted); font-size: 13px; }
+
+  .rotrow { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .rotrow .meta { flex: 1 1 100%; }
+  .swatches { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .sw { width: 22px; height: 22px; padding: 0; border-radius: 5px; border: 1px solid rgba(0,0,0,.2); }
+  .sw.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .swatches input[type=color] { width: 36px; height: 24px; }
+
+  .varstatus { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .varstatus b { color: var(--ink); }
+  .saverow { display: flex; gap: 6px; margin-bottom: 10px; }
+  .vcard { border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+  .vcard.base { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .vcard .thumb { display: block; width: 100%; height: 110px; cursor: pointer; border-radius: 4px; background: var(--bg); }
+  .vcard .vhead { display: flex; gap: 6px; align-items: baseline; margin: 6px 0 4px; }
+  .vcard .vname { font-weight: 600; }
+  .vcard, .gcard { position: relative; }
+  .vcard[draggable=true], .gcard[draggable=true] { cursor: grab; }
+  .grip { color: var(--muted); cursor: grab; user-select: none; letter-spacing: -2px; }
+  .dragsrc { opacity: .4; }
+  .drop-before::before, .drop-after::before { content: ''; position: absolute; background: var(--accent); border-radius: 2px; pointer-events: none; }
+  .vcard.drop-before::before { left: 0; right: 0; top: -6px; height: 3px; }
+  .vcard.drop-after::before { left: 0; right: 0; bottom: -6px; height: 3px; }
+  .gcard.drop-before::before { top: 0; bottom: 0; left: -9px; width: 4px; }
+  .gcard.drop-after::before { top: 0; bottom: 0; right: -9px; width: 4px; }
+  .issues li { font-size: 13px; padding: 3px 0; }
+  details.help summary { cursor: pointer; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  details.help table { font-size: 12px; margin-top: 8px; border-collapse: collapse; }
+  details.help td { padding: 2px 8px 2px 0; vertical-align: top; }
+  kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--input); }
+
+  #gallery { position: absolute; inset: 0; background: var(--bg); overflow: auto; padding: 16px; z-index: 5; }
+  #gallery .ghead { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  #gallery .ghead h2 { margin: 0; font-size: 16px; flex: 1; }
+  #gallery .ggrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .gcard { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; cursor: pointer; }
+  .gcard:hover { border-color: var(--accent); }
+  .gcard.base { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .gcard svg { width: 100%; height: 220px; display: block; }
+  .gcard .gname { font-weight: 600; margin-top: 6px; }
+
+  #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); background: var(--ink); color: var(--panel);
+           padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 20; max-width: 90vw; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* SVG */
+  #canvas *, .thumb *, .gcard svg * { vector-effect: non-scaling-stroke; }
+  .s-wall { fill: var(--wall); }
+  .s-floor, .s-gap { fill: var(--floor); }
+  .s-grid { stroke: var(--grid); stroke-width: 1; fill: none; }
+  .s-grid5 { stroke: var(--grid5); stroke-width: 1; fill: none; }
+  .s-roomlbl { fill: var(--muted); }
+  .item { cursor: grab; }
+  body.dragging, body.dragging .item { cursor: grabbing; }
+  .item .body { stroke: rgba(0,0,0,.4); stroke-width: 1; }
+  .item.floor .body { fill-opacity: .45; stroke-dasharray: 6 4; }
+  .item.sel .body { stroke: var(--accent); stroke-width: 2.5; }
+  .item.warn .body { stroke: var(--warn); stroke-width: 2.5; stroke-dasharray: 5 3; }
+  .item.bad .body { stroke: var(--danger); stroke-width: 2.5; stroke-dasharray: 3 3; }
+  .item .front { stroke: rgba(0,0,0,.55); stroke-width: 3; stroke-linecap: round; }
+  .item text { fill: #1d2330; pointer-events: none; }
+  .item.floor text { fill: var(--ink); }
+  .s-leaf { stroke: var(--ink); stroke-width: 2; }
+  .s-arc { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+  .s-zone { fill: var(--accent); fill-opacity: .06; }
+  .s-window { fill: var(--window); stroke: var(--ink); stroke-width: 1; }
+  .s-slide { fill: var(--panel); stroke: var(--ink); stroke-width: 1; }
+  .s-winline { stroke: var(--ink); stroke-width: 1; }
+  .ophit { fill: transparent; cursor: ew-resize; }
+  .ophit.v { cursor: ns-resize; }
+  .ophit.sel { fill: var(--accent); fill-opacity: .25; stroke: var(--accent); stroke-width: 1.5; }
+  .s-dim { stroke: var(--accent); stroke-width: 1.25; }
+  .s-dimbg { fill: var(--panel); fill-opacity: .92; }
+  .s-dimt { fill: var(--accent); font-weight: 600; }
+  .s-dim, .s-dimbg, .s-dimt, .s-roomlbl, .s-zone, .s-arc, .s-leaf { pointer-events: none; }
+
+  @media (max-width: 960px) {
+    html, body { height: auto; }
+    main { grid-template-columns: 1fr; }
+    #stage { height: 62vh; order: -1; border-bottom: 1px solid var(--line); }
+    #left, #right { border: 0; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">Layout Planner</span>
+  <select id="roomSelect" aria-label="Room"></select>
+  <button data-a="newRoom">+ Room</button>
+  <span class="spacer"></span>
+  <button data-a="undo" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">Undo</button>
+  <button data-a="redo" id="redoBtn" title="Redo (Ctrl/Cmd+Shift+Z)">Redo</button>
+  <label class="inline">Snap
+    <select id="snapSelect">
+      <option value="0.5">½"</option><option value="1">1"</option><option value="2">2"</option>
+      <option value="3">3"</option><option value="6">6"</option><option value="12">1'</option>
+    </select>
+  </label>
+  <button data-a="gallery">Compare variations</button>
+  <button data-a="exportImage" title="Save the current layout as a PNG with dimensions">Save image</button>
+  <button data-a="export" title="Download all rooms and variations as JSON">Export data</button>
+  <label class="btn" title="Load a previously exported JSON file">Import data<input type="file" id="importFile" accept="application/json,.json" hidden></label>
+</header>
+<main>
+  <aside id="left"></aside>
+  <section id="stage">
+    <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div id="statusbar"></div>
+    <div id="gallery" hidden></div>
+  </section>
+  <aside id="right"></aside>
+</main>
+<div id="toast" role="status"></div>
+
+<script>
+'use strict';
+
+/* ---------- constants ---------- */
+const LS_STATE = 'layoutPlanner.state.v1';
+const LS_PREFS = 'layoutPlanner.prefs.v1';
+const WALL = 5;          // wall thickness, inches
+const EPS = 1e-6;
+const PALETTE = ['#a5c8ff', '#ffc6a5', '#b8e0c2', '#f3b6d0', '#d7c6ff', '#ffe39a', '#a9e3e3', '#e6cfa8', '#c9d6a3', '#f5b3a8'];
+const PRESETS = [
+  { name: 'Queen bed', w: 60, d: 80 }, { name: 'King bed', w: 76, d: 80 }, { name: 'Full bed', w: 54, d: 75 },
+  { name: 'Twin bed', w: 38, d: 75 }, { name: 'Nightstand', w: 22, d: 16 }, { name: 'Dresser', w: 60, d: 20 },
+  { name: 'Wardrobe', w: 48, d: 24 }, { name: 'Sofa (3-seat)', w: 84, d: 36 }, { name: 'Loveseat', w: 60, d: 36 },
+  { name: 'Sectional', w: 110, d: 84 }, { name: 'Armchair', w: 32, d: 34 }, { name: 'Coffee table', w: 48, d: 24 },
+  { name: 'Side table', w: 20, d: 20 }, { name: 'TV stand', w: 60, d: 18 }, { name: 'Desk', w: 60, d: 30 },
+  { name: 'Office chair', w: 26, d: 26 }, { name: 'Dining table (6)', w: 72, d: 36 }, { name: 'Round table 48"', w: 48, d: 48, shape: 'round' },
+  { name: 'Dining chair', w: 18, d: 20 }, { name: 'Bookshelf', w: 36, d: 12 }, { name: 'Piano (upright)', w: 58, d: 24 },
+  { name: 'Area rug 5×8', w: 96, d: 60, floor: true }, { name: 'Area rug 8×10', w: 120, d: 96, floor: true },
+  { name: 'Runner rug 2.5×8', w: 96, d: 30, floor: true }, { name: 'Round rug 6\'', w: 72, d: 72, floor: true, shape: 'round' },
+  { name: 'Round side table', w: 20, d: 20, shape: 'round' }, { name: 'Oval coffee table', w: 48, d: 28, shape: 'round' },
+  { name: 'Round ottoman', w: 24, d: 24, shape: 'round' }, { name: 'Bistro table', w: 30, d: 30, shape: 'round' },
+];
+const WALL_NAMES = { N: 'Top wall', S: 'Bottom wall', W: 'Left wall', E: 'Right wall' };
+const OPENING_DEFAULTS = { door: 32, sliding: 72, window: 36, opening: 36 };
+const OPENING_NAMES = { door: 'Door', sliding: 'Sliding door', window: 'Window', opening: 'Open doorway' };
+const TOL = 0.02;        // allowed interpenetration (inches) when testing collisions
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const uid = () => Math.random().toString(36).slice(2, 10);
+const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+const clone = o => JSON.parse(JSON.stringify(o));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const r2 = v => Math.round(v * 100) / 100;
+const normAngle = a => r2(((a % 360) + 360) % 360) % 360;
+
+function fmt(inches) { // feet + inches
+  const neg = inches < 0;
+  let v = Math.round(Math.abs(inches) * 2) / 2;
+  let ft = Math.floor(v / 12), inch = Math.round((v - ft * 12) * 2) / 2;
+  if (inch >= 12) { ft++; inch -= 12; }
+  const is = Number.isInteger(inch) ? String(inch) : inch.toFixed(1);
+  const s = ft ? (inch ? `${ft}' ${is}"` : `${ft}'`) : `${is}"`;
+  return (neg ? '-' : '') + s;
+}
+function fmtIn(inches) { // inches only
+  const v = Math.round(inches * 2) / 2;
+  return (Number.isInteger(v) ? v : v.toFixed(1)) + '"';
+}
+function parseLen(str, def = 'in') {
+  let s = String(str).trim().toLowerCase().replace(/[’′‘]/g, "'").replace(/[”″“]/g, '"').replace(/''/g, '"');
+  if (!s) return null;
+  const N = '(\\d+(?:\\.\\d+)?|\\.\\d+)';
+  let m;
+  if ((m = s.match(new RegExp(`^${N}\\s*(?:'|ft|feet|foot)\\s*(?:${N}\\s*(?:"|in|inch|inches)?)?$`)))) return +m[1] * 12 + (m[2] ? +m[2] : 0);
+  if ((m = s.match(new RegExp(`^${N}\\s*(?:"|in|inch|inches)$`)))) return +m[1];
+  if ((m = s.match(new RegExp(`^${N}\\s*cm$`)))) return +m[1] / 2.54;
+  if ((m = s.match(new RegExp(`^${N}\\s*m$`)))) return +m[1] * 100 / 2.54;
+  if ((m = s.match(new RegExp(`^${N}\\s+${N}$`)))) return +m[1] * 12 + +m[2];
+  if ((m = s.match(new RegExp(`^${N}$`)))) return def === 'ft' ? +m[1] * 12 : +m[1];
+  return null;
+}
+
+/* ---------- state ---------- */
+function makeRoom(name, w, d) {
+  return {
+    id: uid(), name, w, d,
+    openings: [{ id: uid(), type: 'door', wall: 'S', offset: 12, width: 32, hinge: 'start', swing: 'in' }],
+    items: [], variations: [], baseVarId: null,
+  };
+}
+function defaultState() {
+  const r = makeRoom('Living room', 168, 144);
+  return { rooms: [r], activeId: r.id };
+}
+function normalize(data) {
+  if (!data || !Array.isArray(data.rooms) || !data.rooms.length) throw new Error('No rooms found in file');
+  const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+  const normItem = (it, i) => ({
+    id: String(it.id || uid()), name: String(it.name || 'Item'), w: Math.max(1, num(it.w, 24)), d: Math.max(1, num(it.d, 24)),
+    x: num(it.x, 0), y: num(it.y, 0), rot: normAngle(num(it.rot, 0)),
+    color: /^#[0-9a-f]{6}$/i.test(it.color) ? it.color : PALETTE[i % PALETTE.length], floor: !!it.floor,
+    shape: it.shape === 'round' ? 'round' : 'rect',
+  });
+  const rooms = data.rooms.map(r => ({
+    id: String(r.id || uid()), name: String(r.name || 'Room'), w: Math.max(12, num(r.w, 144)), d: Math.max(12, num(r.d, 144)),
+    openings: (r.openings || []).map(o => ({
+      id: String(o.id || uid()), type: OPENING_NAMES[o.type] ? o.type : 'door', panels: [2, 3, 4].includes(o.panels) ? o.panels : 2,
+      wall: ['N', 'S', 'E', 'W'].includes(o.wall) ? o.wall : 'N', offset: Math.max(0, num(o.offset, 0)),
+      width: Math.max(6, num(o.width, 32)), hinge: o.hinge === 'end' ? 'end' : 'start', swing: o.swing === 'out' ? 'out' : 'in',
+    })),
+    items: (r.items || []).map(normItem),
+    variations: (r.variations || []).map(v => ({
+      id: String(v.id || uid()), name: String(v.name || 'Variation'), savedAt: num(v.savedAt, Date.now()), items: (v.items || []).map(normItem),
+    })),
+    baseVarId: r.baseVarId || null,
+  }));
+  const activeId = rooms.some(r => r.id === data.activeId) ? data.activeId : rooms[0].id;
+  return { rooms, activeId };
+}
+function loadState() {
+  try { const raw = localStorage.getItem(LS_STATE); if (raw) return normalize(JSON.parse(raw)); } catch (e) { console.warn(e); }
+  return defaultState();
+}
+function loadPrefs() {
+  try { return Object.assign({ snap: 1 }, JSON.parse(localStorage.getItem(LS_PREFS) || '{}')); } catch { return { snap: 1 }; }
+}
+let state = loadState();
+let prefs = loadPrefs();
+function save() {
+  try { localStorage.setItem(LS_STATE, JSON.stringify(state)); localStorage.setItem(LS_PREFS, JSON.stringify(prefs)); }
+  catch (e) { toast('Could not save to browser storage: ' + e.message); }
+}
+
+// UI-only state
+let sel = null;            // {kind:'item'|'opening', id}
+let drag = null;
+let ui = { confirm: null, renamingVar: null, gallery: false };
+let draft = { preset: '', name: '', w: '', d: '', floor: false, shape: 'rect', varName: '', moveTarget: '' };
+let viewK = 3;
+let varDrag = null;       // {id} while a variation card is being dragged             // screen px per inch on the main canvas
+
+const cur = () => state.rooms.find(r => r.id === state.activeId) || state.rooms[0];
+const selItem = () => sel && sel.kind === 'item' ? cur().items.find(i => i.id === sel.id) : null;
+const selOpening = () => sel && sel.kind === 'opening' ? cur().openings.find(o => o.id === sel.id) : null;
+
+/* ---------- history ---------- */
+const undoStack = [], redoStack = [];
+const snapshot = () => JSON.stringify(state);
+function commit(before) {
+  if (before === snapshot()) return;
+  undoStack.push(before);
+  if (undoStack.length > 200) undoStack.shift();
+  redoStack.length = 0;
+  save();
+}
+function mutate(fn) {
+  const before = snapshot();
+  const res = fn();
+  commit(before);
+  render();
+  return res;
+}
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(snapshot()); state = JSON.parse(undoStack.pop()); save(); render();
+}
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(snapshot()); state = JSON.parse(redoStack.pop()); save(); render();
+}
+
+/* ---------- geometry ---------- */
+// Items are stored by the top-left corner (x, y) of their axis-aligned bounding box plus an angle (rot, degrees clockwise).
+// Rectangles and ovals become convex polygons (circles stay exact) and collide via the separating axis test.
+const cosD = a => (a % 90 === 0 ? [1, 0, -1, 0][(a / 90) % 4] : Math.cos(a * Math.PI / 180));
+const sinD = a => (a % 90 === 0 ? [0, 1, 0, -1][(a / 90) % 4] : Math.sin(a * Math.PI / 180));
+const isCircle = it => it.shape === 'round' && Math.abs(it.w - it.d) < EPS;
+function fp(it) { // bounding-box size
+  const c = Math.abs(cosD(it.rot)), s = Math.abs(sinD(it.rot));
+  if (it.shape === 'round') {
+    const a = it.w / 2, b = it.d / 2;
+    return { w: 2 * Math.sqrt(a * a * c * c + b * b * s * s), h: 2 * Math.sqrt(a * a * s * s + b * b * c * c) };
+  }
+  return { w: it.w * c + it.d * s, h: it.w * s + it.d * c };
+}
+const rectOf = it => { const f = fp(it); return { x: it.x, y: it.y, w: f.w, h: f.h }; };
+const overlaps = (a, b) => a.x < b.x + b.w - TOL && b.x < a.x + a.w - TOL && a.y < b.y + b.h - TOL && b.y < a.y + a.h - TOL;
+const inBounds = (room, r) => r.x >= -EPS && r.y >= -EPS && r.x + r.w <= room.w + EPS && r.y + r.h <= room.d + EPS;
+function shapeOf(it, x = it.x, y = it.y) {
+  const f = fp(it), cx = x + f.w / 2, cy = y + f.h / 2, aabb = { x, y, w: f.w, h: f.h };
+  if (isCircle(it)) return { aabb, circle: { x: cx, y: cy, r: it.w / 2 } };
+  const c = cosD(it.rot), s = sinD(it.rot), a = it.w / 2, b = it.d / 2;
+  const local = it.shape === 'round'
+    ? Array.from({ length: 32 }, (_, i) => [a * Math.cos(i * Math.PI / 16), b * Math.sin(i * Math.PI / 16)])
+    : [[-a, -b], [a, -b], [a, b], [-a, b]];
+  return { aabb, poly: local.map(([px, py]) => ({ x: cx + px * c - py * s, y: cy + px * s + py * c })) };
+}
+function moveShape(sh, dx, dy) {
+  return {
+    aabb: { ...sh.aabb, x: sh.aabb.x + dx, y: sh.aabb.y + dy },
+    circle: sh.circle && { ...sh.circle, x: sh.circle.x + dx, y: sh.circle.y + dy },
+    poly: sh.poly && sh.poly.map(p => ({ x: p.x + dx, y: p.y + dy })),
+  };
+}
+function axesOf(poly) {
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length], nx = q.y - p.y, ny = p.x - q.x, l = Math.hypot(nx, ny);
+    if (l > EPS) out.push({ x: nx / l, y: ny / l });
+  }
+  return out;
+}
+function project(sh, ax) {
+  if (sh.circle) { const c = sh.circle.x * ax.x + sh.circle.y * ax.y; return [c - sh.circle.r, c + sh.circle.r]; }
+  let lo = Infinity, hi = -Infinity;
+  for (const p of sh.poly) { const v = p.x * ax.x + p.y * ax.y; if (v < lo) lo = v; if (v > hi) hi = v; }
+  return [lo, hi];
+}
+function collide(A, B) {
+  if (!overlaps(A.aabb, B.aabb)) return false;
+  if (A.circle && B.circle) return Math.hypot(A.circle.x - B.circle.x, A.circle.y - B.circle.y) < A.circle.r + B.circle.r - TOL;
+  const axes = [...(A.poly ? axesOf(A.poly) : []), ...(B.poly ? axesOf(B.poly) : [])];
+  const circ = A.circle || B.circle, poly = A.circle ? B.poly : B.circle ? A.poly : null;
+  if (circ) { // extra axis: circle center to nearest vertex
+    let best = null, bd = Infinity;
+    for (const p of poly) { const d = Math.hypot(p.x - circ.x, p.y - circ.y); if (d < bd) { bd = d; best = p; } }
+    if (bd > EPS) axes.push({ x: (best.x - circ.x) / bd, y: (best.y - circ.y) / bd });
+  }
+  for (const ax of axes) {
+    const [a0, a1] = project(A, ax), [b0, b1] = project(B, ax);
+    if (a1 <= b0 + TOL || b1 <= a0 + TOL) return false;
+  }
+  return true;
+}
+// Returns (x, y) => whether `it` fits at that bounding-box position.
+function makeChecker(room, it) {
+  const f = fp(it), base = shapeOf(it, 0, 0);
+  const obs = it.floor ? [] : room.items.filter(o => o.id !== it.id && !o.floor).map(o => shapeOf(o));
+  return (x, y) => {
+    if (x < -EPS || y < -EPS || x + f.w > room.w + EPS || y + f.h > room.d + EPS) return false;
+    const box = { x, y, w: f.w, h: f.h };
+    let sh = null;
+    for (const o of obs) {
+      if (!overlaps(box, o.aabb)) continue;
+      sh = sh || moveShape(base, x, y);
+      if (collide(sh, o)) return false;
+    }
+    return true;
+  };
+}
+const fits = (room, it, r) => makeChecker(room, it)(r.x, r.y);
+function steps(max) {
+  if (max < -EPS) return [];
+  const a = [];
+  for (let v = 0; v <= max + EPS; v++) a.push(v);
+  if (!a.length || Math.abs(a[a.length - 1] - max) > EPS) a.push(Math.max(0, max));
+  return a;
+}
+// Nearest free bounding-box position to (px, py), or null.
+function findSpot(room, it, px, py, maxDist = Infinity) {
+  const f = fp(it);
+  if (f.w > room.w + EPS || f.h > room.d + EPS) return null;
+  const ok = makeChecker(room, it), cands = [], md = maxDist * maxDist;
+  for (const x of steps(room.w - f.w)) for (const y of steps(room.d - f.h)) {
+    const dd = (x - px) ** 2 + (y - py) ** 2;
+    if (dd <= md) cands.push([dd, x, y]);
+  }
+  cands.sort((a, b) => a[0] - b[0]);
+  for (const [, x, y] of cands) if (ok(x, y)) return { x: r2(x), y: r2(y) };
+  return null;
+}
+// Largest t in [0,1] for which test(t) holds, assuming test(0) holds.
+function advance(test) {
+  if (test(1)) return 1;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 18; i++) { const mid = (lo + hi) / 2; if (test(mid)) lo = mid; else hi = mid; }
+  return lo;
+}
+// Move toward (tx,ty); if blocked, slide along obstacles and stop flush against them.
+function slideTo(room, it, tx, ty) {
+  const f = fp(it), ok = makeChecker(room, it);
+  tx = clamp(tx, 0, Math.max(0, room.w - f.w)); ty = clamp(ty, 0, Math.max(0, room.d - f.h));
+  if (!ok(it.x, it.y) || ok(tx, ty)) { it.x = r2(tx); it.y = r2(ty); return; }
+  let x = it.x, y = it.y;
+  for (let i = 0; i < 2; i++) {
+    const dx = tx - x; x += dx * advance(t => ok(x + dx * t, y));
+    const dy = ty - y; y += dy * advance(t => ok(x, y + dy * t));
+  }
+  it.x = r2(x); it.y = r2(y);
+}
+// Change size/rotation/shape; keep position (corner) or center, falling back to a nearby free spot.
+function reshape(room, it, changes, anchor, verb) {
+  const old = { ...it }, ob = rectOf(old);
+  Object.assign(it, changes);
+  const f = fp(it);
+  if (f.w > room.w + EPS || f.h > room.d + EPS) { Object.assign(it, old); toast(`${it.name} would be larger than the room.`); return false; }
+  let x = anchor === 'center' ? ob.x + ob.w / 2 - f.w / 2 : ob.x;
+  let y = anchor === 'center' ? ob.y + ob.h / 2 - f.h / 2 : ob.y;
+  x = r2(clamp(x, 0, room.w - f.w)); y = r2(clamp(y, 0, room.d - f.h));
+  if (fits(room, it, { x, y })) { it.x = x; it.y = y; return true; }
+  const spot = findSpot(room, it, x, y, 48);
+  if (spot) { it.x = spot.x; it.y = spot.y; return true; }
+  Object.assign(it, old);
+  toast(`Not enough free space to ${verb} ${it.name} here. Move it somewhere clearer first.`);
+  return false;
+}
+
+function wallLen(room, wall) { return wall === 'N' || wall === 'S' ? room.w : room.d; }
+function openingGeom(room, o) {
+  let s, u, n;
+  switch (o.wall) {
+    case 'N': s = { x: o.offset, y: 0 }; u = { x: 1, y: 0 }; n = { x: 0, y: 1 }; break;
+    case 'S': s = { x: o.offset, y: room.d }; u = { x: 1, y: 0 }; n = { x: 0, y: -1 }; break;
+    case 'W': s = { x: 0, y: o.offset }; u = { x: 0, y: 1 }; n = { x: 1, y: 0 }; break;
+    default: s = { x: room.w, y: o.offset }; u = { x: 0, y: 1 }; n = { x: -1, y: 0 };
+  }
+  const e = { x: s.x + u.x * o.width, y: s.y + u.y * o.width };
+  return { s, e, u, n };
+}
+function bbox(pts) {
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+function doorInfo(room, o) {
+  const g = openingGeom(room, o);
+  const H = o.hinge === 'start' ? g.s : g.e;
+  const uu = o.hinge === 'start' ? g.u : { x: -g.u.x, y: -g.u.y };
+  const nn = o.swing === 'in' ? g.n : { x: -g.n.x, y: -g.n.y };
+  const closed = { x: H.x + uu.x * o.width, y: H.y + uu.y * o.width };
+  const open = { x: H.x + nn.x * o.width, y: H.y + nn.y * o.width };
+  const sweep = uu.x * nn.y - uu.y * nn.x > 0 ? 1 : 0;
+  // swing area as a convex polygon (quarter disk)
+  const poly = [H];
+  for (let i = 0; i <= 12; i++) {
+    const t = (i / 12) * Math.PI / 2, c = Math.cos(t), s = Math.sin(t);
+    poly.push({ x: H.x + (uu.x * c + nn.x * s) * o.width, y: H.y + (uu.y * c + nn.y * s) * o.width });
+  }
+  return { H, closed, open, sweep, r: o.width, shape: { aabb: bbox(poly), poly } };
+}
+function analyze(room, items = room.items) {
+  const bad = new Set(), warn = new Set(), msgs = [];
+  const doors = room.openings.filter(o => o.type === 'door' && o.swing === 'in').map(o => ({ o, d: doorInfo(room, o) }));
+  const shapes = items.map(it => shapeOf(it));
+  items.forEach((it, i) => {
+    if (!inBounds(room, rectOf(it))) { bad.add(it.id); msgs.push({ sev: 'bad', id: it.id, text: `${it.name} extends past a wall` }); }
+    if (it.floor) return;
+    for (let j = i + 1; j < items.length; j++) {
+      const o = items[j];
+      if (!o.floor && collide(shapes[i], shapes[j])) { bad.add(it.id); bad.add(o.id); msgs.push({ sev: 'bad', id: it.id, text: `${it.name} overlaps ${o.name}` }); }
+    }
+    for (const { o, d } of doors) if (collide(shapes[i], d.shape)) {
+      warn.add(it.id); msgs.push({ sev: 'warn', id: it.id, text: `${it.name} is in the swing of the door on the ${WALL_NAMES[o.wall].toLowerCase()}` });
+    }
+  });
+  return { bad, warn, msgs };
+}
+// Distances from the selected item's bounding box to the nearest wall or item box in each direction.
+function gaps(room, it) {
+  const r = rectOf(it), out = [];
+  const obs = it.floor ? [] : room.items.filter(o => o.id !== it.id && !o.floor).map(rectOf);
+  for (const axis of ['x', 'y']) for (const dir of [-1, 1]) {
+    const X = axis === 'x';
+    const pos = X ? r.x : r.y, len = X ? r.w : r.h, lim = X ? room.w : room.d;
+    const cpos = X ? r.y : r.x, clen = X ? r.h : r.w;
+    let best = { g: dir < 0 ? pos : lim - (pos + len), m: cpos + clen / 2 };
+    for (const b of obs) {
+      const bp = X ? b.x : b.y, bl = X ? b.w : b.h, bc = X ? b.y : b.x, bcl = X ? b.h : b.w;
+      const lo = Math.max(cpos, bc), hi = Math.min(cpos + clen, bc + bcl);
+      if (hi - lo <= EPS) continue;
+      const g = dir < 0 ? pos - (bp + bl) : bp - (pos + len);
+      if (g >= -EPS && g < best.g) best = { g, m: (lo + hi) / 2 };
+    }
+    if (best.g > 0.25) {
+      const a = dir < 0 ? pos : pos + len, b = a + dir * best.g;
+      out.push(X ? { x1: a, y1: best.m, x2: b, y2: best.m, g: best.g } : { x1: best.m, y1: a, x2: best.m, y2: b, g: best.g });
+    }
+  }
+  return out;
+}
+
+/* ---------- SVG rendering ---------- */
+const dimLabel = it => (isCircle(it) ? `⌀ ${fmtIn(it.w)}` : `${fmtIn(it.w)} × ${fmtIn(it.d)}`);
+function itemSVG(it, o, k) {
+  const f = fp(it), cx = it.x + f.w / 2, cy = it.y + f.h / 2, a = it.w / 2, b = it.d / 2;
+  const cls = ['item', it.floor ? 'floor' : '', o.sel === it.id ? 'sel' : '', o.bad?.has(it.id) ? 'bad' : (o.warn?.has(it.id) ? 'warn' : '')].join(' ');
+  let s = `<g class="${cls}" data-item="${esc(it.id)}"><g transform="translate(${cx} ${cy}) rotate(${it.rot})">`;
+  s += it.shape === 'round'
+    ? `<ellipse class="body" cx="0" cy="0" rx="${a}" ry="${b}" fill="${esc(it.color)}"/>`
+    : `<rect class="body" x="${-a}" y="${-b}" width="${it.w}" height="${it.d}" rx="${Math.min(2, it.w / 6, it.d / 6)}" fill="${esc(it.color)}"/>`;
+  if (!it.floor && it.shape !== 'round') {
+    const i = Math.min(2, it.w / 8, it.d / 8);
+    s += `<line class="front" x1="${-a + i}" y1="${b - i}" x2="${a - i}" y2="${b - i}"/>`;
+  }
+  s += '</g>';
+  if (!o.thumb) {
+    const line1 = it.name, line2 = dimLabel(it);
+    const chars = Math.max(line1.length, line2.length, 4), base = 12 / k;
+    const uw = it.shape === 'round' ? it.w * 0.72 : it.w, ud = it.shape === 'round' ? it.d * 0.72 : it.d;
+    const fsA = Math.min(base, uw / (chars * 0.6), ud / 2.8), fsB = Math.min(base, ud / (chars * 0.6), uw / 2.8);
+    const alongD = fsB > fsA * 1.15, fs = alongD ? fsB : fsA;
+    const ang = ((((it.rot + (alongD ? 90 : 0)) + 90) % 180) + 180) % 180 - 90; // keep text upright-ish
+    const tf = ang ? ` transform="rotate(${ang} ${cx} ${cy})"` : '';
+    if (fs * k >= 6.5) {
+      s += `<text x="${cx}" y="${cy}" font-size="${fs}" text-anchor="middle"${tf}>` +
+           `<tspan x="${cx}" dy="${-0.15 * fs}" font-weight="600">${esc(line1)}</tspan>` +
+           `<tspan x="${cx}" dy="${1.15 * fs}" font-size="${fs * 0.85}" opacity=".75">${esc(line2)}</tspan></text>`;
+    } else if (o.num) { // export: fall back to the legend number
+      const nfs = Math.min(base, Math.min(uw, ud) * 0.6);
+      if (nfs * k >= 5) s += `<text x="${cx}" y="${cy + nfs * 0.35}" font-size="${nfs}" font-weight="700" text-anchor="middle">${o.num.get(it.id)}</text>`;
+    }
+  }
+  return s + '</g>';
+}
+function openingSVG(room, op, o) {
+  const g = openingGeom(room, op);
+  const out = { x: -g.n.x * WALL, y: -g.n.y * WALL };
+  const wallBox = bbox([g.s, g.e, { x: g.s.x + out.x, y: g.s.y + out.y }, { x: g.e.x + out.x, y: g.e.y + out.y }]);
+  // point `al` inches along the wall from the opening start, `dep` inches into the wall
+  const at = (al, dep) => ({ x: g.s.x + g.u.x * al - g.n.x * dep, y: g.s.y + g.u.y * al - g.n.y * dep });
+  let s = '';
+  if (op.type === 'window') {
+    s += `<rect class="s-window" x="${wallBox.x}" y="${wallBox.y}" width="${wallBox.w}" height="${wallBox.h}"/>`;
+    const m0 = at(0, WALL / 2), m1 = at(op.width, WALL / 2);
+    s += `<line class="s-winline" x1="${m0.x}" y1="${m0.y}" x2="${m1.x}" y2="${m1.y}"/>`;
+  } else {
+    // extend the gap slightly so the wall edge doesn't leave a hairline
+    const pad = 0.6;
+    s += `<rect class="s-gap" x="${wallBox.x - (g.u.x ? 0 : pad)}" y="${wallBox.y - (g.u.y ? 0 : pad)}" width="${wallBox.w + (g.u.x ? 0 : 2 * pad)}" height="${wallBox.h + (g.u.y ? 0 : 2 * pad)}"/>`;
+  }
+  if (op.type === 'door') {
+    const d = doorInfo(room, op);
+    if (op.swing === 'in' && !o.thumb) s += `<path class="s-zone" d="M${d.H.x} ${d.H.y} L${d.closed.x} ${d.closed.y} A${d.r} ${d.r} 0 0 ${d.sweep} ${d.open.x} ${d.open.y} Z"/>`;
+    s += `<path class="s-arc" d="M${d.closed.x} ${d.closed.y} A${d.r} ${d.r} 0 0 ${d.sweep} ${d.open.x} ${d.open.y}"/>`;
+    s += `<line class="s-leaf" x1="${d.H.x}" y1="${d.H.y}" x2="${d.open.x}" y2="${d.open.y}"/>`;
+  }
+  if (op.type === 'sliding') { // bypass panels on alternating tracks inside the wall
+    const np = op.panels || 2, seg = op.width / np, ov = Math.min(2, seg * 0.15), th = Math.min(1.4, WALL * 0.3);
+    for (let i = 0; i < np; i++) {
+      const a0 = Math.max(0, i * seg - ov), a1 = Math.min(op.width, (i + 1) * seg + ov), dc = WALL * (i % 2 ? 0.7 : 0.3);
+      const r = bbox([at(a0, dc - th / 2), at(a1, dc + th / 2)]);
+      s += `<rect class="s-slide" x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`;
+    }
+  }
+  if (!o.thumb && !o.export) {
+    const hit = bbox([at(0, WALL * 1.6), at(op.width, -8)]);
+    const v = op.wall === 'E' || op.wall === 'W';
+    s += `<rect class="ophit ${v ? 'v' : ''} ${o.selOp === op.id ? 'sel' : ''}" data-opening="${esc(op.id)}" x="${hit.x}" y="${hit.y}" width="${hit.w}" height="${hit.h}"><title>${esc(OPENING_NAMES[op.type])}: drag along the wall</title></rect>`;
+  }
+  if (o.export) {
+    const fs = 10 / o.k, p = at(op.width / 2, WALL + fs * 1.1), v = op.wall === 'E' || op.wall === 'W';
+    s += `<text class="s-oplbl" x="${p.x}" y="${p.y + fs * 0.35}" font-size="${fs}" text-anchor="middle"${v ? ` transform="rotate(-90 ${p.x} ${p.y})"` : ''}>${fmtIn(op.width)}</text>`;
+  }
+  return s;
+}
+function dimLineSVG(x1, y1, x2, y2, label, k) {
+  const horiz = Math.abs(y1 - y2) < EPS, t = 5 / k, fs = 12 / k;
+  let s = `<line class="s-dim" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  for (const [x, y] of [[x1, y1], [x2, y2]]) s += horiz
+    ? `<line class="s-dim" x1="${x}" y1="${y - t}" x2="${x}" y2="${y + t}"/>`
+    : `<line class="s-dim" x1="${x - t}" y1="${y}" x2="${x + t}" y2="${y}"/>`;
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, tw = label.length * fs * 0.62 + fs * 0.8, th = fs * 1.4;
+  const tf = horiz ? '' : ` transform="rotate(-90 ${mx} ${my})"`;
+  s += `<g${tf}><rect class="s-dimbg" x="${mx - tw / 2}" y="${my - th / 2}" width="${tw}" height="${th}" rx="${th / 4}"/>`;
+  s += `<text class="s-dimt" x="${mx}" y="${my + fs * 0.35}" font-size="${fs}" text-anchor="middle">${label}</text></g>`;
+  return s;
+}
+function roomSVG(room, items, o = {}) {
+  const k = o.k || 1;
+  const M = o.thumb ? WALL + 2 : o.export ? WALL + 48 / k : WALL + Math.max(30 / k, 6);
+  const vb = [-M, -M, room.w + 2 * M, room.d + 2 * M];
+  let s = `<rect class="s-wall" x="${-WALL}" y="${-WALL}" width="${room.w + 2 * WALL}" height="${room.d + 2 * WALL}"/>`;
+  s += `<rect class="s-floor" x="0" y="0" width="${room.w}" height="${room.d}"/>`;
+  if (!o.thumb) {
+    let g1 = '', g5 = '';
+    for (let x = 12; x < room.w - EPS; x += 12) (x % 60 ? (g1 += `M${x} 0V${room.d}`) : (g5 += `M${x} 0V${room.d}`));
+    for (let y = 12; y < room.d - EPS; y += 12) (y % 60 ? (g1 += `M0 ${y}H${room.w}`) : (g5 += `M0 ${y}H${room.w}`));
+    s += `<path class="s-grid" d="${g1}"/><path class="s-grid5" d="${g5}"/>`;
+  }
+  for (const op of room.openings) s += openingSVG(room, op, o);
+  const ordered = [...items.filter(i => i.floor), ...items.filter(i => !i.floor)];
+  for (const it of ordered) s += itemSVG(it, o, k);
+  if (o.export) {
+    const off = WALL + 34 / k;
+    s += dimLineSVG(0, -off, room.w, -off, fmt(room.w), k);
+    s += dimLineSVG(-off, 0, -off, room.d, fmt(room.d), k);
+  } else if (!o.thumb) {
+    const fs = 12 / k;
+    s += `<text class="s-roomlbl" x="${room.w / 2}" y="${-WALL - fs * 0.6}" font-size="${fs}" text-anchor="middle">${fmt(room.w)}</text>`;
+    s += `<text class="s-roomlbl" x="${-WALL - fs * 0.6}" y="${room.d / 2}" font-size="${fs}" text-anchor="middle" transform="rotate(-90 ${-WALL - fs * 0.6} ${room.d / 2})">${fmt(room.d)}</text>`;
+    const it = o.sel && items.find(i => i.id === o.sel);
+    if (it) {
+      for (const g of gaps(room, it)) {
+        const t = 4 / k, horiz = g.y1 === g.y2;
+        s += `<line class="s-dim" x1="${g.x1}" y1="${g.y1}" x2="${g.x2}" y2="${g.y2}"/>`;
+        s += horiz
+          ? `<line class="s-dim" x1="${g.x2}" y1="${g.y2 - t}" x2="${g.x2}" y2="${g.y2 + t}"/>`
+          : `<line class="s-dim" x1="${g.x2 - t}" y1="${g.y2}" x2="${g.x2 + t}" y2="${g.y2}"/>`;
+        const label = fmt(g.g), dfs = 11 / k, tw = label.length * dfs * 0.62 + dfs * 0.6, th = dfs * 1.4;
+        const mx = (g.x1 + g.x2) / 2, my = (g.y1 + g.y2) / 2;
+        s += `<rect class="s-dimbg" x="${mx - tw / 2}" y="${my - th / 2}" width="${tw}" height="${th}" rx="${th / 4}"/>`;
+        s += `<text class="s-dimt" x="${mx}" y="${my + dfs * 0.35}" font-size="${dfs}" text-anchor="middle">${label}</text>`;
+      }
+    }
+  }
+  return { body: s, vb };
+}
+function thumbSVG(room, items, cls = 'thumb') {
+  const a = analyze(room, items);
+  const { body, vb } = roomSVG(room, items, { thumb: true, bad: a.bad, warn: a.warn });
+  return `<svg class="${cls}" viewBox="${vb.join(' ')}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+}
+
+/* ---------- image export ---------- */
+const EXPORT_CSS = `*{vector-effect:non-scaling-stroke}
+.s-wall{fill:#3b3f47}.s-floor,.s-gap{fill:#fbfaf6}.s-grid{stroke:#eeebe3;fill:none}.s-grid5{stroke:#ddd9ce;fill:none}
+.item .body{stroke:rgba(0,0,0,.45);stroke-width:1}.item.floor .body{fill-opacity:.45;stroke-dasharray:6 4}
+.item .front{stroke:rgba(0,0,0,.55);stroke-width:3;stroke-linecap:round}.item text{fill:#1d2330}
+.s-leaf{stroke:#1d2330;stroke-width:2}.s-arc{fill:none;stroke:#6b7280;stroke-width:1;stroke-dasharray:4 3}.s-zone{fill:#2f6fde;fill-opacity:.06}
+.s-window{fill:#bcd8f2;stroke:#1d2330;stroke-width:1}.s-winline{stroke:#1d2330;stroke-width:1}.s-slide{fill:#ffffff;stroke:#1d2330;stroke-width:1}
+.s-oplbl{fill:#6b7280}.s-dim{stroke:#1d2330;stroke-width:1}.s-dimbg{fill:#ffffff}.s-dimt{fill:#1d2330;font-weight:600}
+.t-title{font-size:20px;font-weight:700;fill:#1d2330}.t-sub{font-size:13px;fill:#6b7280}.t-th{font-size:12px;font-weight:700;fill:#6b7280}.t-td{font-size:13px;fill:#1d2330}`;
+function planSVGString(room, items, title) {
+  const k = clamp(1400 / Math.max(room.w, room.d), 3, 8);
+  const num = new Map(items.map((it, i) => [it.id, i + 1]));
+  const { body, vb } = roomSVG(room, items, { export: true, k, num });
+  const planW = vb[2] * k, planH = vb[3] * k, pad = 24, headH = 70, rowH = 20;
+  const W = Math.ceil(Math.max(planW + 2 * pad, 680));
+  const angled = items.some(it => it.rot % 90 !== 0 || it.shape === 'round');
+  const legendH = items.length ? 44 + items.length * rowH + (angled ? 22 : 0) : 0;
+  const H = Math.ceil(headH + planH + legendH + pad);
+  const ox = (W - planW) / 2;
+  const sub = `${fmt(room.w)} × ${fmt(room.d)} · ${items.length} item${items.length === 1 ? '' : 's'} · ${new Date().toLocaleDateString()}`;
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">`;
+  s += `<style>${EXPORT_CSS}</style><rect width="${W}" height="${H}" fill="#ffffff"/>`;
+  s += `<text class="t-title" x="${pad}" y="36">${esc(title)}</text><text class="t-sub" x="${pad}" y="58">${esc(sub)}</text>`;
+  s += `<g transform="translate(${ox} ${headH}) scale(${k}) translate(${-vb[0]} ${-vb[1]})">${body}</g>`;
+  if (items.length) {
+    const y0 = headH + planH + 20, cols = [pad, pad + 32, pad + 270, pad + 400, pad + 490, pad + 580];
+    ['#', 'Item', 'Size', 'From left', 'From top', 'Angle'].forEach((h, i) => { s += `<text class="t-th" x="${cols[i]}" y="${y0}">${h}</text>`; });
+    s += `<line x1="${pad}" y1="${y0 + 7}" x2="${W - pad}" y2="${y0 + 7}" stroke="#e3e1da"/>`;
+    items.forEach((it, i) => {
+      const y = y0 + 26 + i * rowH;
+      const cells = [String(i + 1), it.name + (it.floor ? ' (floor)' : ''), dimLabel(it), fmt(it.x), fmt(it.y), `${it.rot}°`];
+      s += `<rect x="${cols[1] - 18}" y="${y - 10}" width="11" height="11" rx="2" fill="${esc(it.color)}" stroke="rgba(0,0,0,.3)"/>`;
+      cells.forEach((c, j) => { s += `<text class="t-td" x="${cols[j]}" y="${y}">${esc(c)}</text>`; });
+    });
+    if (angled) s += `<text class="t-sub" x="${pad}" y="${y0 + 30 + items.length * rowH}">Positions are measured from the walls to each item's bounding box (relevant for round and angled items).</text>`;
+  }
+  return { svg: s + '</svg>', W, H };
+}
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function exportImage(items, label) {
+  const room = cur(), title = label ? `${room.name}: ${label}` : room.name;
+  const { svg, W, H } = planSVGString(room, items, title);
+  const fname = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'layout';
+  const fallback = () => { download(new Blob([svg], { type: 'image/svg+xml' }), fname + '.svg'); toast('PNG export is blocked in this browser; saved an SVG instead.'); };
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const scale = 2, c = document.createElement('canvas');
+      c.width = W * scale; c.height = H * scale;
+      const ctx = c.getContext('2d');
+      ctx.scale(scale, scale); ctx.drawImage(img, 0, 0, W, H);
+      c.toBlob(b => (b ? (download(b, fname + '.png'), toast(`Saved ${fname}.png`)) : fallback()), 'image/png');
+    } catch { fallback(); }
+  };
+  img.onerror = fallback;
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+/* ---------- render ---------- */
+let renderPending = false;
+function render() {
+  if (renderPending) return;
+  renderPending = true;
+  requestAnimationFrame(() => { renderPending = false; doRender(); });
+}
+function doRender() {
+  if (varDrag) return; // re-rendering would destroy the drag source; drop/dragend re-render
+  const ae = document.activeElement;
+  const fkey = ae && ae.dataset ? (ae.dataset.f || ae.dataset.d) : null;
+  let selRange = null;
+  try { if (ae && ae.type === 'text') selRange = [ae.selectionStart, ae.selectionEnd]; } catch {}
+
+  const room = cur();
+  if (sel && !(sel.kind === 'item' ? selItem() : selOpening())) sel = null;
+  const a = analyze(room);
+  renderTop();
+  renderCanvas(room, a);
+  renderLeft(room, a);
+  renderRight(room, a);
+  renderGallery(room);
+
+  if (fkey) {
+    const el = document.querySelector(`[data-f="${fkey}"],[data-d="${fkey}"]`);
+    if (el && el !== ae) {
+      el.focus();
+      if (selRange) try { el.setSelectionRange(selRange[0], selRange[1]); } catch {}
+    }
+  }
+}
+function renderTop() {
+  $('#roomSelect').innerHTML = state.rooms.map(r => `<option value="${esc(r.id)}" ${r.id === state.activeId ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+  $('#snapSelect').value = String(prefs.snap);
+  $('#undoBtn').disabled = !undoStack.length;
+  $('#redoBtn').disabled = !redoStack.length;
+}
+function renderCanvas(room, a) {
+  const svg = $('#canvas');
+  const box = svg.getBoundingClientRect();
+  // two-pass: margin depends on k, k depends on margin
+  let k = 3;
+  for (let i = 0; i < 2; i++) {
+    const M = WALL + Math.max(30 / k, 6);
+    k = Math.min(box.width / (room.w + 2 * M), box.height / (room.d + 2 * M)) || 3;
+  }
+  viewK = k;
+  const { body, vb } = roomSVG(room, room.items, { k, sel: sel?.kind === 'item' ? sel.id : null, selOp: sel?.kind === 'opening' ? sel.id : null, bad: a.bad, warn: a.warn });
+  svg.setAttribute('viewBox', vb.join(' '));
+  svg.innerHTML = body;
+  const nBad = a.msgs.filter(m => m.sev === 'bad').length, nWarn = a.msgs.length - nBad;
+  const it = selItem();
+  $('#statusbar').innerHTML =
+    `<span>${esc(room.name)} · ${fmt(room.w)} × ${fmt(room.d)} · ${room.items.length} item${room.items.length === 1 ? '' : 's'}` +
+    (nBad ? ` · <span class="flag-bad">${nBad} conflict${nBad === 1 ? '' : 's'}</span>` : '') +
+    (nWarn ? ` · <span class="flag-warn">${nWarn} warning${nWarn === 1 ? '' : 's'}</span>` : '') + `</span>` +
+    `<span>${it ? `${esc(it.name)} at ${fmt(it.x)}, ${fmt(it.y)} · ` : ''}Drag to move · R rotate · Alt-drag ignores snap</span>`;
+}
+function itemRow(it, a, room) {
+  const flag = a.bad.has(it.id) ? '<span class="flag-bad" title="Conflict">!</span>' : a.warn.has(it.id) ? '<span class="flag-warn" title="Blocks a door">!</span>' : '';
+  return `<li class="${sel?.id === it.id ? 'sel' : ''}" data-a="selItem" data-id="${esc(it.id)}">
+    <span class="swatch" style="background:${esc(it.color)}${it.floor ? ';opacity:.5' : ''}"></span>
+    <span class="grow">${esc(it.name)}${it.floor ? ' <span class="meta">(floor)</span>' : ''}</span>${flag}
+    <span class="meta">${dimLabel(it)}</span></li>`;
+}
+function renderLeft(room, a) {
+  const presetOpts = PRESETS.map((p, i) => `<option value="${i}" ${draft.preset === String(i) ? 'selected' : ''}>${esc(p.name)} (${p.shape === 'round' && p.w === p.d ? `⌀ ${p.w}"` : `${p.w}" × ${p.d}"`})</option>`).join('');
+  const conf = key => ui.confirm === key;
+  $('#left').innerHTML = `
+  <section class="panel">
+    <h2>Room</h2>
+    <label class="field"><span>Name</span><input type="text" data-f="room.name" value="${esc(room.name)}"></label>
+    <div class="row2">
+      <label class="field"><span>Width (left ↔ right)</span><input type="text" data-f="room.w" value="${esc(fmt(room.w))}"></label>
+      <label class="field"><span>Depth (top ↕ bottom)</span><input type="text" data-f="room.d" value="${esc(fmt(room.d))}"></label>
+    </div>
+    <div class="hint">Examples: 12' 6", 150", 12.5 (bare numbers are feet here).</div>
+    <div class="btnrow">
+      <button class="sm" data-a="dupRoom">Duplicate room</button>
+      <button class="sm danger ${conf('delRoom') ? 'confirming' : ''}" data-a="delRoom" data-confirm="1">${conf('delRoom') ? 'Click again to delete' : 'Delete room'}</button>
+    </div>
+  </section>
+  <section class="panel">
+    <h2>Add item</h2>
+    <label class="field"><span>Preset</span><select data-d="preset"><option value="">Custom…</option>${presetOpts}</select></label>
+    <label class="field"><span>Name</span><input type="text" data-d="name" value="${esc(draft.name)}" placeholder="e.g. Bookshelf"></label>
+    <div class="row2">
+      <label class="field"><span>Width</span><input type="text" data-d="w" value="${esc(draft.w)}" placeholder='36"'></label>
+      <label class="field"><span>Depth</span><input type="text" data-d="d" value="${esc(draft.d)}" placeholder='18"'></label>
+    </div>
+    <label class="field"><span>Shape</span><select data-d="shape">
+      <option value="rect" ${draft.shape !== 'round' ? 'selected' : ''}>Rectangle</option>
+      <option value="round" ${draft.shape === 'round' ? 'selected' : ''}>Round / oval</option></select></label>
+    <label class="check"><input type="checkbox" data-d="floor" ${draft.floor ? 'checked' : ''}> Floor item (rug, mat): furniture can sit on it</label>
+    <div class="hint">Bare numbers are inches here. Width is the front edge. Round with equal width and depth is a circle.</div>
+    <button class="primary" data-a="addItem">Add to room</button>
+  </section>
+  <section class="panel">
+    <h2>Items <span>${room.items.length}</span></h2>
+    ${room.items.length ? `<ul class="list">${room.items.map(it => itemRow(it, a, room)).join('')}</ul>` : '<div class="empty">No items yet.</div>'}
+  </section>
+  <section class="panel">
+    <h2>Doors &amp; windows</h2>
+    <div class="btnrow" style="margin:0 0 8px">
+      <button class="sm" data-a="addOpening" data-type="door">+ Door</button>
+      <button class="sm" data-a="addOpening" data-type="sliding">+ Sliding door</button>
+      <button class="sm" data-a="addOpening" data-type="window">+ Window</button>
+      <button class="sm" data-a="addOpening" data-type="opening">+ Doorway</button>
+    </div>
+    ${room.openings.length ? `<ul class="list">${room.openings.map(op => `
+      <li class="${sel?.id === op.id ? 'sel' : ''}" data-a="selOpening" data-id="${esc(op.id)}">
+        <span class="grow">${OPENING_NAMES[op.type]}</span><span class="meta">${WALL_NAMES[op.wall]} · ${fmtIn(op.width)}</span></li>`).join('')}</ul>`
+      : '<div class="empty">None.</div>'}
+  </section>`;
+}
+function renderInspector(room) {
+  const it = selItem(), op = selOpening();
+  const conf = key => ui.confirm === key;
+  if (it) {
+    const others = state.rooms.filter(r => r.id !== room.id);
+    if (!others.some(r => r.id === draft.moveTarget)) draft.moveTarget = others[0]?.id || '';
+    const swatches = PALETTE.map(c => `<button class="sw ${c.toLowerCase() === it.color.toLowerCase() ? 'on' : ''}" data-a="setColor" data-color="${c}" style="background:${c}" title="${c}" aria-label="Color ${c}"></button>`).join('');
+    return `<section class="panel"><h2>Selected item</h2>
+      <label class="field"><span>Name</span><input type="text" data-f="item.name" value="${esc(it.name)}"></label>
+      <div class="field"><span>Color</span><div class="swatches">${swatches}<input type="color" data-f="item.color" value="${esc(it.color)}" title="Custom color"></div></div>
+      <div class="row2">
+        <label class="field"><span>Shape</span><select data-f="item.shape">
+          <option value="rect" ${it.shape !== 'round' ? 'selected' : ''}>Rectangle</option>
+          <option value="round" ${it.shape === 'round' ? 'selected' : ''}>Round / oval</option></select></label>
+        <label class="field"><span>Angle (degrees)</span><input type="text" data-f="item.rot" value="${it.rot}°"></label>
+      </div>
+      <div class="rotrow">
+        <button class="sm" data-a="rotL" title="Rotate counter-clockwise (Shift+R)">⟲ 90°</button>
+        <button class="sm" data-a="rotR" title="Rotate clockwise (R)">⟳ 90°</button>
+        <span class="meta">Clockwise from 0°.${it.shape !== 'round' ? ' Front edge is the dark line.' : ''}</span>
+      </div>
+      <div class="row2">
+        <label class="field"><span>${isCircle(it) ? 'Diameter (width)' : 'Width (front)'}</span><input type="text" data-f="item.w" value="${esc(fmtIn(it.w))}"></label>
+        <label class="field"><span>Depth</span><input type="text" data-f="item.d" value="${esc(fmtIn(it.d))}"></label>
+      </div>
+      <div class="row2">
+        <label class="field"><span>From left wall</span><input type="text" data-f="item.x" value="${esc(fmt(it.x))}"></label>
+        <label class="field"><span>From top wall</span><input type="text" data-f="item.y" value="${esc(fmt(it.y))}"></label>
+      </div>
+      <label class="check"><input type="checkbox" data-f="item.floor" ${it.floor ? 'checked' : ''}> Floor item (rug, mat)</label>
+      ${others.length ? `<div class="field"><span>Send to another room</span><div class="saverow" style="margin:0">
+        <select data-d="moveTarget">${others.map(r => `<option value="${esc(r.id)}" ${r.id === draft.moveTarget ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select>
+        <button class="sm" data-a="moveItem">Move</button><button class="sm" data-a="copyItem">Copy</button></div></div>` : ''}
+      <div class="btnrow">
+        <button class="sm" data-a="dupItem" title="Ctrl/Cmd+D">Duplicate</button>
+        <button class="sm danger ${conf('delItem:' + it.id) ? 'confirming' : ''}" data-a="delItem" data-confirm="1">${conf('delItem:' + it.id) ? 'Click again to delete' : 'Delete'}</button>
+      </div></section>`;
+  }
+  if (op) {
+    const len = wallLen(room, op.wall), horiz = op.wall === 'N' || op.wall === 'S';
+    const startName = horiz ? 'left' : 'top', endName = horiz ? 'right' : 'bottom';
+    return `<section class="panel"><h2>Selected ${OPENING_NAMES[op.type].toLowerCase()}</h2>
+      <div class="row2">
+        <label class="field"><span>Type</span><select data-f="op.type">${Object.entries(OPENING_NAMES).map(([k, v]) => `<option value="${k}" ${op.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label class="field"><span>Wall</span><select data-f="op.wall">${Object.entries(WALL_NAMES).map(([k, v]) => `<option value="${k}" ${op.wall === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      </div>
+      <div class="row2">
+        <label class="field"><span>From ${startName} corner</span><input type="text" data-f="op.offset" value="${esc(fmt(op.offset))}"></label>
+        <label class="field"><span>Width</span><input type="text" data-f="op.width" value="${esc(fmtIn(op.width))}"></label>
+      </div>
+      ${op.type === 'door' ? `<div class="row2">
+        <label class="field"><span>Hinge side</span><select data-f="op.hinge"><option value="start" ${op.hinge === 'start' ? 'selected' : ''}>${startName}</option><option value="end" ${op.hinge === 'end' ? 'selected' : ''}>${endName}</option></select></label>
+        <label class="field"><span>Swings</span><select data-f="op.swing"><option value="in" ${op.swing === 'in' ? 'selected' : ''}>into room</option><option value="out" ${op.swing === 'out' ? 'selected' : ''}>out of room</option></select></label>
+      </div>` : ''}
+      ${op.type === 'sliding' ? `<label class="field"><span>Panels</span><select data-f="op.panels">${[2, 3, 4].map(n => `<option value="${n}" ${op.panels === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}
+      <div class="hint">Wall length ${fmt(len)}. Drag it along the wall on the plan, or use arrow keys.</div>
+      <div class="btnrow"><button class="sm danger ${conf('delOpening:' + op.id) ? 'confirming' : ''}" data-a="delOpening" data-confirm="1">${conf('delOpening:' + op.id) ? 'Click again to delete' : 'Delete'}</button></div>
+      </section>`;
+  }
+  return `<section class="panel"><h2>Selection</h2><div class="empty">Click an item, door or window on the plan to edit it.</div></section>`;
+}
+function baseStatus(room) {
+  const base = room.variations.find(v => v.id === room.baseVarId);
+  if (!base) return { base: null, dirty: true };
+  return { base, dirty: JSON.stringify(room.items) !== JSON.stringify(base.items) };
+}
+function renderRight(room, a) {
+  const { base, dirty } = baseStatus(room);
+  const conf = key => ui.confirm === key;
+  const status = base
+    ? `Working layout: based on <b>${esc(base.name)}</b>${dirty ? ' (modified, not saved)' : ' (saved)'}`
+    : (room.items.length ? 'Working layout: <b>not saved as a variation</b>' : 'Working layout: empty');
+  const varCards = room.variations.map(v => {
+    const isBase = v.id === room.baseVarId;
+    const nameHtml = ui.renamingVar === v.id
+      ? `<input type="text" data-f="var.rename" data-id="${esc(v.id)}" value="${esc(v.name)}">`
+      : `<span class="vname grow">${esc(v.name)}</span>`;
+    return `<div class="vcard ${isBase ? 'base' : ''}" data-var="${esc(v.id)}" draggable="${ui.renamingVar === v.id ? 'false' : 'true'}">
+      <div data-a="loadVar" data-id="${esc(v.id)}" title="Load this variation">${thumbSVG(room, v.items)}</div>
+      <div class="vhead"><span class="grip" title="Drag to reorder">⋮⋮</span>${nameHtml}<span class="meta">${v.items.length} items</span></div>
+      <div class="meta">Saved ${new Date(v.savedAt).toLocaleString()}</div>
+      <div class="btnrow">
+        <button class="sm" data-a="loadVar" data-id="${esc(v.id)}">Load</button>
+        <button class="sm" data-a="updateVar" data-id="${esc(v.id)}" title="Overwrite with the current layout">Overwrite</button>
+        <button class="sm" data-a="renameVar" data-id="${esc(v.id)}">Rename</button>
+        <button class="sm" data-a="varImage" data-id="${esc(v.id)}" title="Save this variation as a PNG">Image</button>
+        <button class="sm danger ${conf('delVar:' + v.id) ? 'confirming' : ''}" data-a="delVar" data-id="${esc(v.id)}" data-confirm="1">${conf('delVar:' + v.id) ? 'Confirm' : 'Delete'}</button>
+      </div></div>`;
+  }).join('');
+  const issues = a.msgs.length
+    ? `<ul class="list issues">${a.msgs.map(m => `<li data-a="selItem" data-id="${esc(m.id)}"><span class="${m.sev === 'bad' ? 'flag-bad' : 'flag-warn'}">!</span> ${esc(m.text)}</li>`).join('')}</ul>`
+    : '<div class="empty">No conflicts.</div>';
+  $('#right').innerHTML = `
+    ${renderInspector(room)}
+    <section class="panel">
+      <h2>Variations <span>${room.variations.length}</span></h2>
+      <div class="varstatus">${status}${room.variations.length > 1 ? '<br>Drag cards to reorder.' : ''}</div>
+      <div class="saverow">
+        <input type="text" data-d="varName" value="${esc(draft.varName)}" placeholder="Option ${room.variations.length + 1}">
+        <button class="primary" data-a="saveVar">Save new</button>
+      </div>
+      ${base && dirty ? `<div class="btnrow" style="margin:-4px 0 10px"><button class="sm" data-a="updateVar" data-id="${esc(base.id)}">Save changes to “${esc(base.name)}”</button></div>` : ''}
+      ${varCards || '<div class="empty">No saved variations for this room yet.</div>'}
+    </section>
+    <section class="panel"><h2>Issues</h2>${issues}</section>
+    <section class="panel">
+      <details class="help"><summary>Shortcuts</summary>
+        <table>
+          <tr><td>Drag</td><td>Move item (stops flush against walls and other items)</td></tr>
+          <tr><td><kbd>Alt</kbd> + drag</td><td>Move without snapping</td></tr>
+          <tr><td><kbd>←↑→↓</kbd></td><td>Nudge by snap step (<kbd>Shift</kbd> = 1')</td></tr>
+          <tr><td><kbd>R</kbd> / <kbd>Shift</kbd>+<kbd>R</kbd></td><td>Rotate 90° clockwise / counter-clockwise</td></tr>
+          <tr><td><kbd>]</kbd> / <kbd>[</kbd></td><td>Rotate 15° clockwise / counter-clockwise</td></tr>
+          <tr><td><kbd>⌫</kbd> / <kbd>Del</kbd></td><td>Delete selection</td></tr>
+          <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>D</kbd></td><td>Duplicate item</td></tr>
+          <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>Z</kbd></td><td>Undo (<kbd>Shift</kbd> to redo)</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Deselect / close compare view</td></tr>
+        </table>
+        <p class="hint" style="margin-top:8px">Data is stored in this browser (localStorage). Use Export for a backup file.</p>
+      </details>
+    </section>`;
+}
+function renderGallery(room) {
+  const g = $('#gallery');
+  g.hidden = !ui.gallery;
+  if (!ui.gallery) { g.innerHTML = ''; return; }
+  const { base, dirty } = baseStatus(room);
+  const cards = [`<div class="gcard ${!base || dirty ? 'base' : ''}" data-a="closeGallery">${thumbSVG(room, room.items, '')}
+      <div class="gname">Working layout</div><div class="meta">${base ? (dirty ? `From ${esc(base.name)}, modified` : `Same as ${esc(base.name)}`) : 'Unsaved'}</div></div>`]
+    .concat(room.variations.map(v => `<div class="gcard ${v.id === room.baseVarId && !dirty ? 'base' : ''}" data-a="loadVar" data-id="${esc(v.id)}" data-close="1" data-var="${esc(v.id)}" draggable="true">
+      ${thumbSVG(room, v.items, '')}<div class="gname">${esc(v.name)}</div>
+      <div class="meta">${v.items.length} items · ${new Date(v.savedAt).toLocaleString()}</div></div>`));
+  g.innerHTML = `<div class="ghead"><h2>${esc(room.name)}: variations</h2><span class="meta">Click one to load it · drag to reorder</span>
+    <button data-a="closeGallery">Close</button></div><div class="ggrid">${cards.join('')}</div>`;
+}
+
+/* ---------- actions ---------- */
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+}
+function addItem() {
+  const room = cur();
+  const w = parseLen(draft.w, 'in'), d = parseLen(draft.d, 'in');
+  if (!w || !d || w < 1 || d < 1) { toast('Enter a width and depth, e.g. 36" and 18".'); return; }
+  const it = { id: uid(), name: draft.name.trim() || 'Item', w: r2(w), d: r2(d), x: 0, y: 0, rot: 0,
+               color: PALETTE[room.items.length % PALETTE.length], floor: !!draft.floor, shape: draft.shape === 'round' ? 'round' : 'rect' };
+  const spot = findSpot(room, it, room.w / 2 - it.w / 2, room.d / 2 - it.d / 2);
+  if (!spot) { toast(`No free space large enough for a ${dimLabel(it)} item.`); return; }
+  Object.assign(it, spot);
+  mutate(() => room.items.push(it));
+  sel = { kind: 'item', id: it.id };
+  render();
+}
+function dupItem() {
+  const room = cur(), it = selItem();
+  if (!it) return;
+  const copy = { ...clone(it), id: uid(), name: it.name };
+  const spot = findSpot(room, copy, it.x + 12, it.y + 12);
+  if (!spot) { toast('No free space for a copy.'); return; }
+  Object.assign(copy, spot);
+  mutate(() => room.items.push(copy));
+  sel = { kind: 'item', id: copy.id };
+  render();
+}
+function rotate(deg) {
+  const room = cur(), it = selItem();
+  if (!it) return;
+  mutate(() => reshape(room, it, { rot: normAngle(it.rot + deg) }, 'center', 'rotate'));
+}
+// Move or copy the selected item into another room, near the same spot if possible.
+function sendItem(copy) {
+  const room = cur(), it = selItem(), target = state.rooms.find(r => r.id === draft.moveTarget);
+  if (!it || !target || target.id === room.id) return;
+  const n = { ...clone(it), id: copy ? uid() : it.id };
+  const spot = findSpot(target, n, it.x, it.y);
+  if (!spot) { toast(`${it.name} doesn't fit anywhere in ${target.name}.`); return; }
+  Object.assign(n, spot);
+  mutate(() => {
+    target.items.push(n);
+    if (!copy) room.items = room.items.filter(i => i.id !== it.id);
+  });
+  if (!copy) sel = null;
+  toast(`${copy ? 'Copied' : 'Moved'} ${it.name} to ${target.name}.`);
+  render();
+}
+function deleteSelection() {
+  const room = cur();
+  if (selItem()) mutate(() => { room.items = room.items.filter(i => i.id !== sel.id); });
+  else if (selOpening()) mutate(() => { room.openings = room.openings.filter(o => o.id !== sel.id); });
+  sel = null; render();
+}
+function addOpening(type) {
+  const room = cur();
+  const width = OPENING_DEFAULTS[type];
+  const order = ['N', 'E', 'S', 'W'];
+  // first wall where it fits without overlapping another opening, centered
+  let wall = 'N', offset = 0;
+  for (const w of order) {
+    const len = wallLen(room, w);
+    if (width > len) continue;
+    const off = (len - width) / 2;
+    const clash = room.openings.some(o => o.wall === w && off < o.offset + o.width && o.offset < off + width);
+    wall = w; offset = off;
+    if (!clash) break;
+  }
+  if (width > wallLen(room, wall)) { toast('Room is too small for that opening.'); return; }
+  const op = { id: uid(), type, wall, offset: r2(offset), width, hinge: 'start', swing: 'in', panels: 2 };
+  mutate(() => room.openings.push(op));
+  sel = { kind: 'opening', id: op.id };
+  render();
+}
+function saveVariation() {
+  const room = cur();
+  const name = draft.varName.trim() || `Option ${room.variations.length + 1}`;
+  const v = { id: uid(), name, savedAt: Date.now(), items: clone(room.items) };
+  mutate(() => { room.variations.push(v); room.baseVarId = v.id; });
+  draft.varName = '';
+  toast(`Saved “${name}”.`);
+  render();
+}
+function loadVariation(id) {
+  const room = cur(), v = room.variations.find(x => x.id === id);
+  if (!v) return;
+  mutate(() => { room.items = clone(v.items); room.baseVarId = v.id; });
+  sel = null;
+  toast(`Loaded “${v.name}”. Undo restores the previous layout.`);
+  render();
+}
+function updateVariation(id) {
+  const room = cur(), v = room.variations.find(x => x.id === id);
+  if (!v) return;
+  mutate(() => { v.items = clone(room.items); v.savedAt = Date.now(); room.baseVarId = v.id; });
+  toast(`“${v.name}” overwritten with the current layout.`);
+}
+function moveVariation(room, id, targetId, after) {
+  if (id === targetId) return;
+  const arr = room.variations, from = arr.findIndex(v => v.id === id);
+  if (from < 0 || !arr.some(v => v.id === targetId)) return;
+  const [v] = arr.splice(from, 1);
+  arr.splice(arr.findIndex(x => x.id === targetId) + (after ? 1 : 0), 0, v);
+}
+function copyRoom(room) {
+  const c = clone(room);
+  c.id = uid(); c.name = room.name + ' (copy)';
+  const remap = {};
+  c.variations.forEach(v => { const n = uid(); remap[v.id] = n; v.id = n; });
+  c.baseVarId = remap[c.baseVarId] || null;
+  return c;
+}
+function exportJSON() {
+  download(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }), `layout-planner-${new Date().toISOString().slice(0, 10)}.json`);
+}
+
+/* ---------- field edits ---------- */
+function setRoomField(room, prop, v) {
+  if (prop === 'name') { room.name = v.trim() || 'Room'; return; }
+  const len = parseLen(v, 'ft');
+  if (len == null || len < 12) { toast(`Enter a size of at least 1', e.g. 12' 6".`); return; }
+  const next = { ...room, [prop]: r2(len) };
+  const out = room.items.filter(it => !inBounds(next, rectOf(it)));
+  if (out.length) { toast(`Can't shrink: ${out.map(i => i.name).join(', ')} would be outside the walls. Move them first.`); return; }
+  const badOp = room.openings.find(o => o.offset + o.width > wallLen(next, o.wall) + EPS);
+  if (badOp) { toast(`Can't shrink: a ${OPENING_NAMES[badOp.type].toLowerCase()} on the ${WALL_NAMES[badOp.wall].toLowerCase()} would no longer fit.`); return; }
+  room[prop] = r2(len);
+}
+function setItemField(room, it, prop, v) {
+  if (prop === 'name') { it.name = v.trim() || 'Item'; return; }
+  if (prop === 'color') { it.color = v; return; }
+  if (prop === 'shape') { reshape(room, it, { shape: v === 'round' ? 'round' : 'rect' }, 'center', 'reshape'); return; }
+  if (prop === 'rot') {
+    const deg = parseFloat(String(v).replace(/[°\s]|deg/g, ''));
+    if (!isFinite(deg)) { toast('Enter an angle in degrees, e.g. 45.'); return; }
+    reshape(room, it, { rot: normAngle(deg) }, 'center', 'rotate');
+    return;
+  }
+  if (prop === 'floor') {
+    const was = it.floor; it.floor = v;
+    if (!v && !fits(room, it, rectOf(it))) { it.floor = was; toast(`${it.name} overlaps furniture; move it before turning off "floor item".`); }
+    return;
+  }
+  const len = parseLen(v, 'in');
+  if (prop === 'w' || prop === 'd') {
+    if (len == null || len < 1) { toast('Enter a size like 36".'); return; }
+    reshape(room, it, { [prop]: r2(len) }, 'corner', 'resize');
+    return;
+  }
+  if (prop === 'x' || prop === 'y') {
+    if (len == null) { toast('Enter a distance like 2\' 6".'); return; }
+    const r = { ...rectOf(it), [prop]: r2(len) };
+    if (!fits(room, it, r)) { toast(`${it.name} doesn't fit there (wall or another item is in the way).`); return; }
+    it[prop] = r2(len);
+  }
+}
+function setOpeningField(room, op, prop, v) {
+  if (prop === 'type') { op.type = v; return; }
+  if (prop === 'hinge' || prop === 'swing') { op[prop] = v; return; }
+  if (prop === 'panels') { op.panels = +v; return; }
+  if (prop === 'wall') {
+    const len = wallLen(room, v);
+    if (op.width > len) { toast('Too wide for that wall.'); return; }
+    op.wall = v; op.offset = r2(clamp(op.offset, 0, len - op.width)); return;
+  }
+  const len = parseLen(v, 'in'), wl = wallLen(room, op.wall);
+  if (len == null) { toast('Enter a length like 32".'); return; }
+  if (prop === 'width') {
+    if (len < 6 || len > wl) { toast(`Width must be between 6" and ${fmt(wl)}.`); return; }
+    op.width = r2(len); op.offset = r2(clamp(op.offset, 0, wl - op.width)); return;
+  }
+  if (prop === 'offset') {
+    if (len + op.width > wl + EPS) { toast(`Too far: max is ${fmt(wl - op.width)}.`); return; }
+    op.offset = r2(len);
+  }
+}
+function onFieldChange(el) {
+  const key = el.dataset.f;
+  if (!key) return;
+  const room = cur(), v = el.type === 'checkbox' ? el.checked : el.value;
+  const [obj, prop] = key.split('.');
+  if (obj === 'room') mutate(() => setRoomField(room, prop, v));
+  else if (obj === 'item') { const it = selItem(); if (it) mutate(() => setItemField(room, it, prop, v)); }
+  else if (obj === 'op') { const op = selOpening(); if (op) mutate(() => setOpeningField(room, op, prop, v)); }
+  else if (obj === 'var') {
+    const vv = room.variations.find(x => x.id === el.dataset.id);
+    ui.renamingVar = null;
+    if (vv) mutate(() => { vv.name = String(v).trim() || vv.name; });
+  }
+  render();
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-a]');
+  const a = el?.dataset.a;
+  const id = el?.dataset.id;
+  if (el && el.dataset.confirm) {
+    const key = a + (id ? ':' + id : (a === 'delItem' || a === 'delOpening') ? ':' + sel?.id : '');
+    if (ui.confirm !== key) { ui.confirm = key; render(); return; }
+  }
+  if (ui.confirm) { ui.confirm = null; render(); }
+  if (!a) return;
+  const room = cur();
+  switch (a) {
+    case 'newRoom': {
+      const r = makeRoom(`Room ${state.rooms.length + 1}`, 144, 120);
+      mutate(() => { state.rooms.push(r); state.activeId = r.id; });
+      sel = null; ui.gallery = false; toast('New room added. Set its name and size on the left.'); break;
+    }
+    case 'dupRoom': { const c = copyRoom(room); mutate(() => { state.rooms.push(c); state.activeId = c.id; }); sel = null; break; }
+    case 'delRoom':
+      if (state.rooms.length === 1) { toast('This is the only room; add another before deleting it.'); break; }
+      mutate(() => { state.rooms = state.rooms.filter(r => r.id !== room.id); state.activeId = state.rooms[0].id; });
+      sel = null; toast('Room deleted. Undo restores it.'); break;
+    case 'addItem': addItem(); break;
+    case 'selItem': sel = { kind: 'item', id }; render(); break;
+    case 'selOpening': sel = { kind: 'opening', id }; render(); break;
+    case 'addOpening': addOpening(el.dataset.type); break;
+    case 'rotL': rotate(-90); break;
+    case 'rotR': rotate(90); break;
+    case 'setColor': { const it = selItem(); if (it) mutate(() => { it.color = el.dataset.color; }); break; }
+    case 'moveItem': sendItem(false); break;
+    case 'copyItem': sendItem(true); break;
+    case 'exportImage': {
+      const { base, dirty } = baseStatus(room);
+      exportImage(room.items, base && !dirty ? base.name : '');
+      break;
+    }
+    case 'varImage': { const v = room.variations.find(x => x.id === id); if (v) exportImage(v.items, v.name); break; }
+    case 'dupItem': dupItem(); break;
+    case 'delItem': case 'delOpening': deleteSelection(); break;
+    case 'saveVar': saveVariation(); break;
+    case 'loadVar': loadVariation(id); if (el.dataset.close) ui.gallery = false; render(); break;
+    case 'updateVar': updateVariation(id); break;
+    case 'renameVar': ui.renamingVar = id; render(); requestAnimationFrame(() => { const i = $('[data-f="var.rename"]'); if (i) { i.focus(); i.select(); } }); break;
+    case 'delVar': mutate(() => { room.variations = room.variations.filter(v => v.id !== id); if (room.baseVarId === id) room.baseVarId = null; }); toast('Variation deleted. Undo restores it.'); break;
+    case 'undo': undo(); break;
+    case 'redo': redo(); break;
+    case 'gallery': ui.gallery = !ui.gallery; render(); break;
+    case 'closeGallery': ui.gallery = false; render(); break;
+    case 'export': exportJSON(); break;
+  }
+});
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el.id === 'roomSelect') { state.activeId = el.value; sel = null; save(); render(); return; }
+  if (el.id === 'snapSelect') { prefs.snap = +el.value; save(); return; }
+  if (el.id === 'importFile') {
+    const file = el.files[0]; el.value = '';
+    if (!file) return;
+    file.text().then(txt => {
+      const data = normalize(JSON.parse(txt));
+      mutate(() => { state = data; });
+      sel = null; toast(`Imported ${data.rooms.length} room${data.rooms.length === 1 ? '' : 's'}. Undo restores the previous data.`);
+    }).catch(err => toast('Import failed: ' + err.message));
+    return;
+  }
+  if (el.dataset.d === 'preset') {
+    draft.preset = el.value;
+    const p = PRESETS[+el.value];
+    if (el.value !== '' && p) Object.assign(draft, { name: p.name, w: p.w + '"', d: p.d + '"', floor: !!p.floor, shape: p.shape || 'rect' });
+    render(); return;
+  }
+  if (el.dataset.d === 'floor') { draft.floor = el.checked; return; }
+  if (el.dataset.d === 'shape') { draft.shape = el.value; return; }
+  if (el.dataset.d === 'moveTarget') { draft.moveTarget = el.value; return; }
+  if (el.dataset.f) onFieldChange(el);
+});
+document.addEventListener('input', e => {
+  const el = e.target;
+  if (el.dataset.d && el.type === 'text') { draft[el.dataset.d] = el.value; if (el.dataset.d !== 'varName') draft.preset = ''; }
+});
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  const inField = t.matches && t.matches('input, select, textarea');
+  if (inField) {
+    if (e.key === 'Enter' && t.type === 'text') {
+      if (t.dataset.d === 'varName') { saveVariation(); return; }
+      if (['name', 'w', 'd'].includes(t.dataset.d)) { addItem(); return; }
+      t.blur();
+    }
+    if (e.key === 'Escape') { ui.renamingVar = null; t.blur(); render(); }
+    return;
+  }
+  const mod = e.metaKey || e.ctrlKey;
+  const key = e.key.toLowerCase();
+  if (mod && key === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && key === 'y') { e.preventDefault(); redo(); return; }
+  if (mod && key === 'd') { e.preventDefault(); dupItem(); return; }
+  if (e.key === 'Escape') { if (ui.gallery) ui.gallery = false; else sel = null; render(); return; }
+  if (mod || e.altKey) return;
+  const room = cur(), it = selItem(), op = selOpening();
+  if (key === 'r' && it) { rotate(e.shiftKey ? -90 : 90); return; }
+  if ((e.key === ']' || e.key === '[') && it) { rotate(e.key === ']' ? 15 : -15); return; }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && (it || op)) { e.preventDefault(); deleteSelection(); return; }
+  const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  if (arrows[e.key] && (it || op)) {
+    e.preventDefault();
+    const step = e.shiftKey ? 12 : prefs.snap, [dx, dy] = arrows[e.key];
+    if (it) mutate(() => slideTo(room, it, it.x + dx * step, it.y + dy * step));
+    else {
+      const horiz = op.wall === 'N' || op.wall === 'S';
+      const delta = (horiz ? dx : dy) * step;
+      if (delta) mutate(() => { op.offset = r2(clamp(op.offset + delta, 0, wallLen(room, op.wall) - op.width)); });
+    }
+  }
+});
+
+/* drag */
+const svgEl = $('#canvas');
+function toSvg(e) {
+  const pt = svgEl.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  return pt.matrixTransform(svgEl.getScreenCTM().inverse());
+}
+function snapMagnet(raw, step, candidates, free) {
+  if (free) return raw;
+  let v = Math.round(raw / step) * step, bd = 8 / viewK;
+  for (const c of candidates) { const d = Math.abs(c - raw); if (d < bd) { bd = d; v = c; } }
+  return v;
+}
+svgEl.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+  const room = cur(), p = toSvg(e);
+  const itEl = e.target.closest('[data-item]'), opEl = e.target.closest('[data-opening]');
+  if (opEl) {
+    const op = room.openings.find(o => o.id === opEl.dataset.opening);
+    sel = { kind: 'opening', id: op.id };
+    drag = { kind: 'opening', id: op.id, start: op.offset, p0: p, before: snapshot(), moved: false };
+  } else if (itEl) {
+    const it = room.items.find(i => i.id === itEl.dataset.item);
+    sel = { kind: 'item', id: it.id };
+    drag = { kind: 'item', id: it.id, start: { x: it.x, y: it.y }, p0: p, before: snapshot(), moved: false };
+  } else {
+    sel = null;
+  }
+  if (drag) { svgEl.setPointerCapture(e.pointerId); document.body.classList.add('dragging'); }
+  e.preventDefault();
+  render();
+});
+svgEl.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const room = cur(), p = toSvg(e);
+  const dx = p.x - drag.p0.x, dy = p.y - drag.p0.y;
+  if (!drag.moved && Math.hypot(dx, dy) * viewK < 3) return;
+  drag.moved = true;
+  const free = e.altKey, step = prefs.snap;
+  if (drag.kind === 'item') {
+    const it = room.items.find(i => i.id === drag.id);
+    if (!it) return;
+    const f = fp(it);
+    const xs = [0, room.w - f.w], ys = [0, room.d - f.h];
+    for (const o of room.items) {
+      if (o.id === it.id) continue;
+      const b = rectOf(o);
+      xs.push(b.x - f.w, b.x + b.w, b.x, b.x + b.w - f.w);
+      ys.push(b.y - f.h, b.y + b.h, b.y, b.y + b.h - f.h);
+    }
+    const tx = snapMagnet(drag.start.x + dx, step, xs, free), ty = snapMagnet(drag.start.y + dy, step, ys, free);
+    slideTo(room, it, tx, ty);
+  } else {
+    const op = room.openings.find(o => o.id === drag.id);
+    if (!op) return;
+    const horiz = op.wall === 'N' || op.wall === 'S', len = wallLen(room, op.wall);
+    const raw = drag.start + (horiz ? dx : dy);
+    op.offset = r2(clamp(snapMagnet(raw, step, [0, len - op.width], free), 0, len - op.width));
+  }
+  render();
+});
+function endDrag() {
+  if (!drag) return;
+  if (drag.moved) commit(drag.before);
+  drag = null;
+  document.body.classList.remove('dragging');
+  render();
+}
+svgEl.addEventListener('pointerup', endDrag);
+svgEl.addEventListener('pointercancel', endDrag);
+
+/* variation reordering (HTML5 drag and drop on sidebar + compare cards) */
+function clearDropMarks() {
+  document.querySelectorAll('.drop-before, .drop-after, .dragsrc').forEach(el => el.classList.remove('drop-before', 'drop-after', 'dragsrc'));
+}
+function dropSide(card, e) {
+  const r = card.getBoundingClientRect();
+  return card.classList.contains('gcard') ? e.clientX > r.left + r.width / 2 : e.clientY > r.top + r.height / 2;
+}
+document.addEventListener('dragstart', e => {
+  const card = e.target.closest && e.target.closest('[data-var]');
+  if (!card || card.getAttribute('draggable') !== 'true') return;
+  varDrag = { id: card.dataset.var };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', card.dataset.var);
+  card.classList.add('dragsrc');
+});
+document.addEventListener('dragover', e => {
+  if (!varDrag) return;
+  const card = e.target.closest && e.target.closest('[data-var]');
+  if (!card) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const after = dropSide(card, e);
+  document.querySelectorAll('.drop-before, .drop-after').forEach(el => { if (el !== card) el.classList.remove('drop-before', 'drop-after'); });
+  if (card.dataset.var !== varDrag.id) { card.classList.toggle('drop-after', after); card.classList.toggle('drop-before', !after); }
+});
+document.addEventListener('drop', e => {
+  if (!varDrag) return;
+  const card = e.target.closest && e.target.closest('[data-var]');
+  e.preventDefault();
+  const id = varDrag.id;
+  varDrag = null;
+  clearDropMarks();
+  if (card) { const after = dropSide(card, e); mutate(() => moveVariation(cur(), id, card.dataset.var, after)); }
+  render();
+});
+document.addEventListener('dragend', () => {
+  if (!varDrag) return;
+  varDrag = null;
+  clearDropMarks();
+  render();
+});
+
+new ResizeObserver(() => render()).observe($('#stage'));
+render();
+</script>
+</body>
+</html>
