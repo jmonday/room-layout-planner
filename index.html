@@ -159,6 +159,8 @@
   .banner { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; background: var(--accent); color: var(--accent-ink); }
   .banner span { flex: 1; min-width: 200px; }
   .banner[hidden] { display: none; }
+  .banner button { background: var(--panel); color: var(--ink); border-color: transparent; }
+  .banner button:hover { background: var(--hover); }
 
   @media (max-width: 1280px) and (min-width: 961px) {
     main { grid-template-columns: 240px minmax(0, 1fr) 270px; }
@@ -1169,10 +1171,11 @@ async function readShareHash() {
     if (m[1] === 'z') bytes = await pipeBytes(bytes, new DecompressionStream('deflate-raw'));
     const data = normalize(JSON.parse(new TextDecoder().decode(bytes)));
     const names = data.rooms.map(r => r.name).join(', ');
+    sel = null; ui.gallery = false;
+    const msg = mutate(() => mergeRooms(data.rooms));
     const b = $('#banner');
-    b.innerHTML = `<span>Shared layout received: <b>${esc(names)}</b></span><button data-a="acceptShare">Add to my rooms</button><button data-a="dismissShare">Dismiss</button>`;
+    b.innerHTML = `<span>Shared layout received: <b>${esc(names)}</b> (${msg}).</span><button data-a="undoShare">Undo</button><button data-a="dismissShare">OK</button>`;
     b.hidden = false;
-    b._data = data;
   } catch (err) { toast('Could not open the shared link: ' + err.message); }
 }
 function exportJSON() {
@@ -1306,13 +1309,8 @@ document.addEventListener('click', e => {
     case 'closeGallery': ui.gallery = false; render(); break;
     case 'export': exportJSON(); break;
     case 'share': shareRoom(); break;
-    case 'acceptShare': {
-      const b = $('#banner'), data = b._data;
-      b.hidden = true; b._data = null;
-      if (data) { sel = null; const msg = mutate(() => mergeRooms(data.rooms)); toast(`Shared layout ${msg}. Undo reverts.`); }
-      break;
-    }
-    case 'dismissShare': $('#banner').hidden = true; $('#banner')._data = null; break;
+    case 'undoShare': $('#banner').hidden = true; undo(); toast('Shared layout removed.'); break;
+    case 'dismissShare': $('#banner').hidden = true; break;
   }
 });
 document.addEventListener('change', e => {
